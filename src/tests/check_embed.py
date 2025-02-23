@@ -18,8 +18,6 @@ def test(
     start = torch.randint(0, seq_len - 2, (1,))
     end = torch.randint(start + 1, seq_len, (1,))
     
-    start = 1
-    end = 2
     
     # Initialize the model
     config = LlamaPromptTuningConfig.from_pretrained(MODEL_NAME)
