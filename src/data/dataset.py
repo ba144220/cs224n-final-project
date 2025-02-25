@@ -1,34 +1,35 @@
 from datasets import load_dataset
 
 def format_superglue(sample, task):
-    """Format SuperGLUE dataset samples into QA format."""
+    """Format SuperGLUE dataset samples into a standardized QA format."""
     if task == "boolq":
-        question = sample["question"]
-        answer = sample["label"]
+        input_text = f"Passage: {sample['passage']}\nQuestion: {sample['question']}\nAnswer: "
+        answer = "yes" if sample["label"] else "no"
     elif task == "cb":
-        question = f"Premise: {sample['premise']} Hypothesis: {sample['hypothesis']}"
-        answer = sample["label"]  # 0: entailment, 1: contradiction, 2: neutral
+        input_text = f"Premise: {sample['premise']}\nHypothesis: {sample['hypothesis']}\nAnswer: "
+        answer = ["entailment", "contradiction", "neutral"][sample["label"]]
     elif task == "copa":
-        question = f"Premise: {sample['premise']} What is more plausible? {sample['choice1']} or {sample['choice2']}"
+        input_text = f"Premise: {sample['premise']}\nWhat is more plausible? {sample['choice1']} or {sample['choice2']}?\nAnswer: "
         answer = sample[f"choice{sample['label'] + 1}"]
     elif task == "multirc":
-        question = f"Passage: {sample['paragraph']} Question: {sample['question']}"
+        input_text = f"Passage: {sample['paragraph']}\nQuestion: {sample['question']}\nAnswer: "
         answer = "yes" if sample["answer"] else "no"
     elif task == "record":
-        question = f"Passage: {sample['passage']} Question: {sample['query']}"
-        answer = sample["answers"]
+        input_text = f"Passage: {sample['passage']}\nQuestion: {sample['query']}\nAnswer: "
+        answer = ", ".join(sample["answers"])
     elif task == "rte":
-        question = f"Premise: {sample['premise']} Hypothesis: {sample['hypothesis']}"
+        input_text = f"Premise: {sample['premise']}\nHypothesis: {sample['hypothesis']}\nAnswer: "
         answer = "yes" if sample["label"] else "no"
     elif task == "wic":
-        question = f"Sentence 1: {sample['sentence1']} Sentence 2: {sample['sentence2']} Word: {sample['word']}"
+        input_text = f"Sentence 1: {sample['sentence1']}\nSentence 2: {sample['sentence2']}\nWord: {sample['word']}\nAnswer: "
         answer = "yes" if sample["label"] else "no"
     elif task == "wsc":
-        question = f"Sentence: {sample['text']} Does '{sample['span1_text']}' refer to '{sample['span2_text']}'?"
+        input_text = f"Sentence: {sample['text']}\nDoes '{sample['span1_text']}' refer to '{sample['span2_text']}'?\nAnswer: "
         answer = "yes" if sample["label"] else "no"
     else:
-        question, answer = None, None
-    return {"question": question, "answer": answer}
+        input_text, answer = None, None
+
+    return {"input_text": input_text, "answer": answer}
 
 def load_superglue():
     """Load and format SuperGLUE datasets."""
@@ -45,12 +46,17 @@ def load_other_datasets():
     
     # GSM8K
     gsm8k = load_dataset("gsm8k", "main")
-    dataset_qa["gsm8k"] = gsm8k["train"].map(lambda x: {"question": x["question"], "answer": x["answer"]})
+    dataset_qa["gsm8k"] = gsm8k["train"].map(lambda x: {
+        "input_text": f"Question: {x['question']}\nAnswer: ",
+        "answer": x["answer"]
+    })
     
     # MBPP
     mbpp = load_dataset("mbpp")
-    dataset_qa["mbpp"] = mbpp["train"].map(lambda x: {"question": x["text"], "answer": x["code"]})
-    
+    dataset_qa["mbpp"] = mbpp["train"].map(lambda x: {
+        "input_text": f"Task: {x['text']}\nCode: ",
+        "answer": x["code"]
+    })
     
     return dataset_qa
 
