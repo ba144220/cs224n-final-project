@@ -5,11 +5,15 @@ from typing import Tuple, Optional
 import torch
 import torch.nn as nn
 
+import os
+
 
 class LlamaPromptTuningConfig(LlamaConfig):
     def __init__(
         self,
         prompt_tuning_range: Optional[Tuple[int, int]] = None,
+        soft_prompt_path: Optional[str] = None,
+        output_dir: Optional[str] = None,
         *args,
         **kwargs,
     ):
@@ -18,6 +22,8 @@ class LlamaPromptTuningConfig(LlamaConfig):
         """
         super().__init__(*args, **kwargs)
         self.prompt_tuning_range = prompt_tuning_range
+        self.soft_prompt_path = soft_prompt_path
+        self.output_dir = output_dir
 
 
 class LlamaPromptTuningLM(LlamaForCausalLM):
@@ -29,6 +35,22 @@ class LlamaPromptTuningLM(LlamaForCausalLM):
             self.soft_prompt = nn.Parameter(torch.zeros(soft_prompt_len, config.hidden_size))
         else:
             self.soft_prompt = None
+            
+        if config.soft_prompt_path is not None:
+            self.soft_prompt = nn.Parameter(torch.load(config.soft_prompt_path))
+            # Sanity check
+            assert self.soft_prompt.shape == (config.prompt_tuning_range[1] - config.prompt_tuning_range[0], config.hidden_size)
+    
+    def save_soft_prompt(self):
+        if self.soft_prompt is None:
+            raise ValueError("Soft prompt is not initialized")
+        if self.config.output_dir is None:
+            raise ValueError("Output directory is not set")
+        # Create the directory if it doesn't exist
+        os.makedirs(self.config.output_dir, exist_ok=True)
+        torch.save(self.soft_prompt.data, os.path.join(self.config.output_dir, "soft_prompt.pt"))
+        
+        print(f"Soft prompt saved to {self.config.output_dir}/soft_prompt.pt")
     
     def get_soft_prompt(self):
         return self.soft_prompt
