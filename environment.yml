@@ -16,7 +16,8 @@ dependencies:
   - pytorch 
   - transformers
   - datasets
-  # - bitsandbytes
+  - trl
+  - bitsandbytes
   # - accelerate
   # - sentencepiece
   # for jupyter notebook

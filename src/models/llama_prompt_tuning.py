@@ -21,6 +21,7 @@ class LlamaPromptTuningConfig(LlamaConfig):
         prompt_tuning_range: The range of the soft prompt. E.g. (0, 10) means the first 10 tokens are the soft prompt.
         """
         super().__init__(*args, **kwargs)
+        
         self.prompt_tuning_range = prompt_tuning_range
         self.soft_prompt_path = soft_prompt_path
         self.output_dir = output_dir
@@ -29,6 +30,10 @@ class LlamaPromptTuningConfig(LlamaConfig):
 class LlamaPromptTuningLM(LlamaForCausalLM):
     def __init__(self, config: LlamaConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
+                
+        # Freeze all the parameters
+        for param in self.parameters():
+            param.requires_grad = False
         
         if config.prompt_tuning_range is not None:
             soft_prompt_len = config.prompt_tuning_range[1] - config.prompt_tuning_range[0]
