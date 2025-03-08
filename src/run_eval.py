@@ -1,5 +1,5 @@
 from datasets import load_dataset
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, LlamaForCausalLM
 import torch
 from models.llama_prompt_tuning import LlamaPromptTuningConfig, LlamaPromptTuningLM
 from tqdm import tqdm
@@ -12,41 +12,12 @@ def format_prompt(context, question):
             "role": "system",
             "content": "You are a helpful assistant that answers questions based on the provided context. You can only answer with Yes or No."
         },
-        {
+        {   
             "role": "user",
-            "content": f"Context: {context}\n\nQuestion: {question}\n\nBased on the context, answer with Yes or No."
+            "content": f"Context: {context}\n\nQuestion: {question}"
         }
     ]
     return messages
-
-def generate_answer(model, tokenizer, context, question):
-    """Generate an answer for a single example"""
-    messages = format_prompt(context, question)
-    input_text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True
-    )
-    
-    inputs = tokenizer(
-        input_text,
-        return_tensors="pt",
-        truncation=True,
-        max_length=512
-    ).to(model.device)
-    
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=5,
-            temperature=0.1,
-            do_sample=False
-        )
-    
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    # Extract just the Yes/No answer
-    response = response.split("assistant")[-1].strip().lower()
-    return "yes" in response
 
 def evaluate_model(
     model: LlamaPromptTuningLM,
@@ -98,6 +69,7 @@ def evaluate_model(
     )
 
     correct = 0
+    unknown = 0
     total = 0
     
     # Evaluate in batches
@@ -121,7 +93,14 @@ def evaluate_model(
         for j, output in enumerate(outputs):
             response = tokenizer.decode(output, skip_special_tokens=True)
             response = response.split("assistant")[-1].strip().lower()
-            predicted = "yes" in response
+            print(response)
+            if "yes" in response:
+                predicted = 1
+            elif "no" in response:
+                predicted = 0
+            else:
+                predicted = -1
+                unknown += 1
             correct += (predicted == labels[j])
             total += 1
     
@@ -129,26 +108,36 @@ def evaluate_model(
     return {
         "accuracy": accuracy,
         "correct": correct,
-        "total": total
+        "total": total,
+        "unknown": unknown
     }
 
 if __name__ == "__main__":
-    MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+    # MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+    MODEL_NAME = "output/random_init/checkpoint-500"
+    TOKENIZER_NAME = "meta-llama/Llama-3.2-1B-Instruct"
     
     # Load model and tokenizer
     config = LlamaPromptTuningConfig.from_pretrained(MODEL_NAME)
-    model = LlamaPromptTuningLM.from_pretrained(
+    # config.prompt_tuning_range = (5, 48)
+    # config.prompt_tuning_range = (45, 48)
+    
+    model: LlamaPromptTuningLM = LlamaPromptTuningLM.from_pretrained(
         MODEL_NAME,  # Path to your trained model
         config=config,
         device_map="auto"
     )
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    # model.init_soft_prompt_with_prompt_embedding(torch.tensor([271], device=model.device))
+    # model.init_soft_prompt_with_random_values()
+    
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
     tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "left"
+    tokenizer.padding_side = "right"
     
     # Evaluate on a subset of 100 examples
-    results = evaluate_model(model, tokenizer, batch_size=8)
+    results = evaluate_model(model, tokenizer, batch_size=1, num_examples=400)
     
     print("\nEvaluation Results:")
     print(f"Accuracy: {results['accuracy']:.2%}")
     print(f"Correct: {results['correct']}/{results['total']}")
+    print(f"Unknown: {results['unknown']}/{results['total']}")
