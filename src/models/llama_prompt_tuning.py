@@ -113,10 +113,14 @@ class LlamaPromptTuningLM(LlamaForCausalLM):
             if inputs_embeds is None:
                 inputs_embeds = self.model.embed_tokens(input_ids)
             
-            # Patch the soft prompt to the input
-            start_idx = self.config.prompt_tuning_range[0]
-            end_idx = self.config.prompt_tuning_range[1]
-            inputs_embeds[:, start_idx:end_idx, :] = self.soft_prompt
+            # Print the sum of attention mask
+            if inputs_embeds.size(1) > 1: # if the input is not a single token
+                # Patch the soft prompt to the input
+                start_idx = self.config.prompt_tuning_range[0]
+                end_idx = self.config.prompt_tuning_range[1]
+                # Expand self.soft_prompt to batch_size (copy itself batch_size times)
+                expanded_soft_prompt = self.soft_prompt.unsqueeze(0).expand(inputs_embeds.size(0), -1, -1)
+                inputs_embeds[:, start_idx:end_idx, :] = expanded_soft_prompt
                                 
             return super().forward(inputs_embeds=inputs_embeds, **kwargs)
         else:
