@@ -1,0 +1,7 @@
+{
+    "dataset": "SuperGLUE",
+    "task": "BoolQ",
+    "input_text": "Passage: The sky is blue.\nQuestion: Is the sky green?\nAnswer: ",
+    "model_output": ["Answer1", "Answer2", "Answer3"],
+    "reference_answer": "Label"
+  }

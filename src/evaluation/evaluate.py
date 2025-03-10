@@ -1,47 +1,45 @@
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from datasets import load_dataset
-from tqdm import tqdm
+import json
 
-def evaluate_boolq(model_path, device="cuda"):
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+def compute_accuracy(results):
+    """Compute accuracy as the proportion of correct answers."""
+    correct = sum(1 for r in results if r["model_output"][0] == r["reference_answer"])
+    return correct / len(results)
+
+def compute_exact_match(results):
+    """Compute exact match score."""
+    matches = sum(1 for r in results if any(output == r["reference_answer"] for output in r["model_output"]))
+    return matches / len(results)
+
+def compute_f1(results):
+    """Compute F1-score for classification or QA tasks."""
+    def f1_score(pred, gold):
+        pred_tokens = set(pred.split())
+        gold_tokens = set(gold.split())
+        common = pred_tokens & gold_tokens
+        if not common:
+            return 0.0
+        precision = len(common) / len(pred_tokens)
+        recall = len(common) / len(gold_tokens)
+        return 2 * (precision * recall) / (precision + recall)
     
-    dataset = load_dataset("super_glue", "boolq")["validation"]
-    
-    correct = 0
-    total = 0
+    f1_scores = [max(f1_score(output, r["reference_answer"]) for output in r["model_output"]) for r in results]
+    return sum(f1_scores) / len(f1_scores)
 
-    for sample in tqdm(dataset):
-        question = sample["question"]
-        passage = sample["passage"]
-        label = sample["answer"]  # 1 for True, 0 for False
+def compute_pass_at_k(results, k):
+    """Compute pass@k for code generation tasks."""
+    passes = sum(1 for r in results if any(output == r["reference_answer"] for output in r["model_output"][:k]))
+    return passes / len(results)
 
-        # Format input
-        input_text = f"Passage: {passage}\nQuestion: {question}\nAnswer: "
-        inputs = tokenizer(input_text, return_tensors="pt").to(device)
+def load_json(filename):
+    """Load JSON file with results."""
+    with open(filename, "r") as f:
+        return json.load(f)
 
-        # Generate response
-        with torch.no_grad():
-            output = model.generate(**inputs, max_new_tokens=5)
-
-        response = tokenizer.decode(output[0], skip_special_tokens=True).strip().lower()
-        
-        if "yes" in response:
-            prediction = 1
-        elif "no" in response:
-            prediction = 0
-        else:
-            prediction = -1  # Invalid prediction
-        
-        if prediction == label:
-            correct += 1
-        total += 1
-
-    accuracy = correct / total
-    print(f"Accuracy: {accuracy:.4f}")
-
-    return accuracy
-
-# Example usage:
-# evaluate_boolq("/path/to/your/saved/model")
+if __name__ == "__main__":
+    results = load_json("results.json")
+    print("Accuracy:", compute_accuracy(results))
+    print("Exact Match:", compute_exact_match(results))
+    print("F1 Score:", compute_f1(results))
+    print("Pass@1:", compute_pass_at_k(results, 1))
+    print("Pass@10:", compute_pass_at_k(results, 10))
+    print("Pass@100:", compute_pass_at_k(results, 100))
