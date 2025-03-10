@@ -183,5 +183,3 @@ wandb/
 # configs
 # Ignore configs 
 /configs/
-
-/output
