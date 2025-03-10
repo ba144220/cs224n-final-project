@@ -58,6 +58,13 @@ def load_other_datasets():
         "answer": x["code"]
     })
     
+    # HumanEval
+    humaneval = load_dataset("openai/openai_humaneval")
+    dataset_qa["humaneval"] = humaneval["test"].map(lambda x: {
+        "input_text": f"Prompt: {x['prompt']}\nSolution: ",
+        "answer": x["canonical_solution"]
+    })
+    
     return dataset_qa
 
 def load_all_datasets():
@@ -71,3 +78,4 @@ if __name__ == "__main__":
     print(dataset_qa["boolq"][0])
     print(dataset_qa["gsm8k"][0])
     print(dataset_qa["mbpp"][0])
+    print(dataset_qa["humaneval"][0])
