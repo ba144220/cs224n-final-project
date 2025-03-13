@@ -12,7 +12,7 @@ from datasets import disable_caching
 from data.dataset import load_pt_dataset
 import torch
 from tqdm import tqdm
-from models.llama_prompt_tuning import LlamaPromptTuningConfig, LlamaPromptTuningLM
+from models.llama_prompt_tuning import LlamaPromptTuningLM
 from data.dataset import DatasetEnum, default_system_prompts, generation_lengths
 from arguments import ModelArguments, DatasetArguments
 
@@ -69,11 +69,11 @@ def main():
     else:
         model_args, dataset_args, eval_args = parser.parse_args_into_dataclasses()
     dataset_name: DatasetEnum = dataset_args.dataset
-
-    # Initialize model configuration
-    model_config = LlamaPromptTuningConfig.from_pretrained(model_args.model_name)
-    if model_args.use_prompt_tuning and eval_args.soft_prompt_path:
-        model_config.soft_prompt_path = eval_args.soft_prompt_path
+    
+    # Get system prompt
+    system_prompt = model_args.system_prompt or default_system_prompts[dataset_name]
+    results = []
+    
 
     # Configure tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
@@ -81,15 +81,19 @@ def main():
     tokenizer.padding_side = "right"
 
     # Initialize model
-    model = LlamaPromptTuningLM.from_pretrained(
+    model: LlamaPromptTuningLM = LlamaPromptTuningLM.from_pretrained(
         model_args.model_name,
-        config=model_config,
         device_map="auto"
     )
     
     # Load soft prompt if using prompt tuning
     if model_args.use_prompt_tuning:
-        model.load_soft_prompt()
+        model.load_soft_prompt(eval_args.soft_prompt_path)
+    
+    # model.init_soft_prompt_with_prompt_embedding(
+    #     token_ids=tokenizer(system_prompt, add_special_tokens=False, return_tensors="pt").input_ids[0].to(model.device)
+    # )
+    
     model.eval()
 
     # Load dataset
@@ -100,16 +104,19 @@ def main():
         # Shuffle the dataset
         test_dataset = test_dataset.shuffle(seed=eval_args.eval_seed)
         test_dataset = test_dataset.select(range(dataset_args.eval_size))
-    
-    # Get system prompt
-    system_prompt = model_args.system_prompt or default_system_prompts[dataset_name]
-    results = []
+        
+    # Get the length of the soft prompt
+    soft_prompt_len = model.get_soft_prompt_len()
 
     # Evaluate
     for i in tqdm(range(0, len(test_dataset))):
         example = test_dataset[i]
         
-        text = format_prompt(example, system_prompt, tokenizer)
+        if soft_prompt_len > 0:
+            # Pad the soft prompt with padding tokens
+            text = format_prompt(example, "<|end_of_text|>"*soft_prompt_len, tokenizer)
+        else:
+            text = format_prompt(example, system_prompt, tokenizer)
         
         # Format input using chat template
         model_input = tokenizer(text, return_tensors="pt", add_special_tokens=False).to(model.device)
@@ -120,6 +127,7 @@ def main():
                 **model_input,
                 max_new_tokens=generation_lengths[dataset_name],
                 do_sample=False,
+                temperature=0.0,
                 num_return_sequences=1,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id
