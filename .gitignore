@@ -185,3 +185,5 @@ wandb/
 /configs/
 
 /output
+
+/results
