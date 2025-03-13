@@ -19,6 +19,7 @@ class ModelArguments:
     # System prompt
     # If init_from_natural_language is True, this will be used to initialize the soft prompt
     # If use_prompt_tuning is False, this will be the system prompt
+    # If it's None, the default system prompt will be used
     system_prompt: Optional[str] = field(default=None)
     
     # Prompt tuning length
@@ -26,7 +27,7 @@ class ModelArguments:
     # If init_from_natural_language is True
     # or init_from_pretrained is True 
     # or use_prompt_tuning is False, this will be ignored
-    prompt_tuning_length: int
+    prompt_tuning_length: int = field(default=None)
 
 @dataclass
 class DatasetArguments:
