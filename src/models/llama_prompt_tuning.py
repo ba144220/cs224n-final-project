@@ -1,8 +1,9 @@
 from transformers import LlamaForCausalLM, LlamaConfig
 
-from typing import Tuple, Optional
+from typing import Optional
 
 import torch
+import torch.nn.functional as F
 import torch.nn as nn
 
 import os
@@ -58,18 +59,34 @@ class LlamaPromptTuningLM(LlamaForCausalLM):
     def init_soft_prompt_with_prompt_embedding(
         self,
         token_ids: torch.Tensor,
+        soft_prompt_len: Optional[int] = None,
     ):
         """
         token_ids: int torch.Tensor with shape (seq_len)
         """
         # Sanity check
         assert token_ids.ndim == 1, "token_ids must be a 1D tensor"
-        # Get the length of the token ids
-        soft_prompt_len = token_ids.size(0)
+        
+        token_ids_len = token_ids.size(0)
+        if soft_prompt_len is not None:
+            print(f"\nSoft prompt length specified. Will do interpolation.\n")
+        else:
+            soft_prompt_len = token_ids_len
         self.soft_prompt = nn.Parameter(torch.zeros(soft_prompt_len, self.config.hidden_size, device=self.device))
         
         # Get the prompt embedding
         prompt_embedding = self.model.embed_tokens(token_ids)
+        if token_ids_len != soft_prompt_len:
+            print(f"Interpolating prompt embedding from {token_ids_len} to {soft_prompt_len} tokens")
+            # Unsqueeze the prompt embedding to (1, 1, seq_len, hidden_size)
+            prompt_embedding = prompt_embedding.unsqueeze(0).unsqueeze(0) # (1, 1, seq_len, hidden_size)
+            prompt_embedding = F.interpolate(
+                prompt_embedding, 
+                size=(soft_prompt_len, prompt_embedding.size(1)),
+                mode="bilinear", 
+                align_corners=False
+            )
+            prompt_embedding = prompt_embedding.squeeze(0).squeeze(0) # (seq_len, hidden_size)
         self.soft_prompt.data.copy_(prompt_embedding)
         
 

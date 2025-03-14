@@ -43,6 +43,7 @@ class TrainingArguments:
     output_dir: str = field(default="./outputs")
     gradient_accumulation_steps: int = field(default=1)
     num_train_epochs: int = field(default=1)
+    max_steps: int = field(default=1000)
     
     logging_steps: int = field(default=10)
     max_seq_length: int = field(default=2048)
