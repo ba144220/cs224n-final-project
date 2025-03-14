@@ -36,3 +36,30 @@ class DatasetArguments:
     )
     train_size: Optional[int] = field(default=None)
     eval_size: Optional[int] = field(default=None)
+
+
+@dataclass
+class TrainingArguments:
+    output_dir: str = field(default="./outputs")
+    gradient_accumulation_steps: int = field(default=1)
+    num_train_epochs: int = field(default=1)
+    max_steps: int = field(default=1000)
+    
+    logging_steps: int = field(default=10)
+    max_seq_length: int = field(default=2048)
+    
+    per_device_train_batch_size: int = field(default=1)
+    per_device_eval_batch_size: int = field(default=1)
+    learning_rate: float = field(default=2.0e-5)
+    weight_decay: float = field(default=0.01)
+    warmup_steps: int = field(default=50)
+    
+    do_train: bool = field(default=True)
+    do_eval: bool = field(default=True)
+    eval_strategy: str = field(default="steps")
+    eval_steps: int = field(default=50)
+    eval_on_start: bool = field(default=True)
+    
+    save_strategy: str = field(default="steps")
+    save_total_limit: int = field(default=1)
+    save_steps: int = field(default=100)
