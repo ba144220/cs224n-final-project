@@ -136,15 +136,22 @@ def main():
             formatted_texts = format_prompt(example, system_prompt, tokenizer)
         example["text"] = formatted_texts
         return example
+    train_remove_columns = dataset["train"].column_names
+    if "text" in train_remove_columns:
+        train_remove_columns = train_remove_columns.remove("text")
+    eval_remove_columns = dataset["validation"].column_names
+    if "text" in eval_remove_columns:
+        eval_remove_columns = eval_remove_columns.remove("text")
+        
     train_dataset = dataset["train"].map(
         format_dataset,
         batched=False,
-        remove_columns=dataset["train"].column_names.remove("text")
+        remove_columns=train_remove_columns
     )
     eval_dataset = dataset["validation"].map(
         format_dataset,
         batched=False,
-        remove_columns=dataset["validation"].column_names.remove("text")
+        remove_columns=eval_remove_columns
     )
     
     print(train_dataset)
