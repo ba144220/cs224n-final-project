@@ -1,6 +1,6 @@
 from transformers import LlamaForCausalLM, LlamaConfig
 
-from typing import Optional
+from typing import Optional, Union, List
 
 import torch
 import torch.nn.functional as F
@@ -94,22 +94,31 @@ class LlamaPromptTuningLM(LlamaForCausalLM):
         self,
         input_ids: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
+        padding_offsets: Optional[Union[int, List[int]]] = 0,
         **kwargs,
     ) -> torch.Tensor:
 
         if self.soft_prompt is not None:
+            
             # Get the input embeddings
             if inputs_embeds is None:
                 inputs_embeds = self.model.embed_tokens(input_ids)
+                
+            # Get batch size
+            batch_size = inputs_embeds.size(0)
+            
+            if isinstance(padding_offsets, int):
+                padding_offsets = [padding_offsets] * batch_size
+            else:
+                assert len(padding_offsets) == batch_size, "padding_offsets must be a list of length batch_size"
             
             # Print the sum of attention mask
             if inputs_embeds.size(1) > 1: # if the input is not a single token
-                # Patch the soft prompt to the input
-                start_idx = self.soft_prompt_offset
-                end_idx = start_idx + self.get_soft_prompt_len()
-                # Expand self.soft_prompt to batch_size (copy itself batch_size times)
-                expanded_soft_prompt = self.soft_prompt.unsqueeze(0).expand(inputs_embeds.size(0), -1, -1)
-                inputs_embeds[:, start_idx:end_idx, :] = expanded_soft_prompt
+                for batch_idx in range(batch_size):
+                    # Patch the soft prompt to the input
+                    start_idx = self.soft_prompt_offset + padding_offsets[batch_idx]
+                    end_idx = start_idx + self.get_soft_prompt_len()
+                    inputs_embeds[batch_idx, start_idx:end_idx, :] = self.soft_prompt
                 
             return super().forward(inputs_embeds=inputs_embeds, **kwargs)
         else:
