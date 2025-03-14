@@ -7,7 +7,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import Optional
-from transformers import HfArgumentParser, AutoTokenizer
+from transformers import HfArgumentParser, AutoTokenizer, GenerationConfig
 from datasets import disable_caching
 from data.dataset import load_pt_dataset
 import torch
@@ -17,6 +17,11 @@ from data.dataset import DatasetEnum, default_system_prompts, generation_lengths
 from arguments import ModelArguments, DatasetArguments
 
 disable_caching()
+
+generation_config = GenerationConfig(
+    do_sample=False,
+    num_return_sequences=1,
+)
 
 @dataclass
 class EvalArguments:
@@ -101,6 +106,8 @@ def main():
     #     token_ids=tokenizer(system_prompt, add_special_tokens=False, return_tensors="pt").input_ids[0].to(model.device)
     # )
     
+    print(f"Soft prompt length: {model.get_soft_prompt_len()}")
+    
     model.eval()
 
     # Load dataset
@@ -117,6 +124,7 @@ def main():
 
     # Evaluate
     batch_size = eval_args.batch_size
+    generation_config.max_new_tokens = generation_lengths[dataset_name]
     for i in tqdm(range(0, len(test_dataset), batch_size)):
         examples = test_dataset[i:i+batch_size]
         texts = []
@@ -146,10 +154,7 @@ def main():
         with torch.no_grad():
             outputs = model.generate(
                 **model_input,
-                max_new_tokens=generation_lengths[dataset_name],
-                do_sample=False,
-                temperature=0.0,
-                num_return_sequences=1,
+                generation_config=generation_config,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
                 # Use the padding offsets to generate the output
