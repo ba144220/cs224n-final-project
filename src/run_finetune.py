@@ -102,7 +102,8 @@ def main():
         model.load_soft_prompt(model_args.init_from_pretrained)
     elif model_args.init_from_natural_language:
         model.init_soft_prompt_with_prompt_embedding(
-            token_ids=tokenizer(system_prompt, add_special_tokens=False, return_tensors="pt").input_ids[0].to(model.device)
+            token_ids=tokenizer(system_prompt, add_special_tokens=False, return_tensors="pt").input_ids[0].to(model.device),
+            soft_prompt_len=model_args.prompt_tuning_length
         )
     elif model_args.init_random:
         model.init_soft_prompt_with_random_values(
@@ -122,10 +123,10 @@ def main():
     if dataset_args.train_size:
         # Shuffle the dataset
         dataset["train"] = dataset["train"].shuffle(seed=42)
-        dataset["train"] = dataset["train"].select(range(dataset_args.train_size))
+        dataset["train"] = dataset["train"].select(range(min(dataset_args.train_size, len(dataset["train"]))))
     if dataset_args.eval_size:
         dataset["validation"] = dataset["validation"].shuffle(seed=42)
-        dataset["validation"] = dataset["validation"].select(range(dataset_args.eval_size))
+        dataset["validation"] = dataset["validation"].select(range(min(dataset_args.eval_size, len(dataset["validation"]))))
 
     # Format datasets
     def format_dataset(example):
@@ -135,16 +136,15 @@ def main():
             formatted_texts = format_prompt(example, system_prompt, tokenizer)
         example["text"] = formatted_texts
         return example
-
     train_dataset = dataset["train"].map(
         format_dataset,
         batched=False,
-        remove_columns=dataset["train"].column_names
+        remove_columns=dataset["train"].column_names.remove("text")
     )
     eval_dataset = dataset["validation"].map(
         format_dataset,
         batched=False,
-        remove_columns=dataset["validation"].column_names
+        remove_columns=dataset["validation"].column_names.remove("text")
     )
     
     print(train_dataset)
@@ -163,6 +163,7 @@ def main():
         output_dir=training_args.output_dir,
         gradient_accumulation_steps=training_args.gradient_accumulation_steps,
         num_train_epochs=training_args.num_train_epochs,
+        max_steps=training_args.max_steps,
         
         logging_steps=training_args.logging_steps,
         max_seq_length=training_args.max_seq_length,
