@@ -1,5 +1,6 @@
 
-DATASETS="boolq mbpp gsm8k"
+# DATASETS="boolq mbpp gsm8k"
+DATASETS="wic"
 
 for DATASET in $DATASETS; do
 

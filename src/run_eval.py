@@ -98,6 +98,8 @@ def main():
         device_map="auto"
     )
     
+    
+    
     # Load soft prompt if using prompt tuning
     if model_args.use_prompt_tuning:
         model.load_soft_prompt(eval_args.soft_prompt_path)
@@ -107,6 +109,7 @@ def main():
     # )
     
     print(f"Soft prompt length: {model.get_soft_prompt_len()}")
+    print(model.soft_prompt.shape)
     
     model.eval()
 
