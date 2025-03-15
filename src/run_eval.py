@@ -7,7 +7,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import Optional
-from transformers import HfArgumentParser, AutoTokenizer
+from transformers import HfArgumentParser, AutoTokenizer, GenerationConfig
 from datasets import disable_caching
 from data.dataset import load_pt_dataset
 import torch
@@ -17,6 +17,11 @@ from data.dataset import DatasetEnum, default_system_prompts, generation_lengths
 from arguments import ModelArguments, DatasetArguments
 
 disable_caching()
+
+generation_config = GenerationConfig(
+    do_sample=False,
+    num_return_sequences=1,
+)
 
 @dataclass
 class EvalArguments:
@@ -32,10 +37,17 @@ class EvalArguments:
         default=42,
         metadata={"help": "Seed for shuffling the evaluation dataset"}
     )
+    batch_size: Optional[int] = field(
+        default=1,
+        metadata={"help": "Batch size for evaluation"}
+    )
+    max_seq_length: Optional[int] = field(
+        default=2048,
+        metadata={"help": "Maximum sequence length for evaluation"}
+    )
 
-def format_prompt(example, system_prompt, tokenizer):
+def format_prompt(input_text, system_prompt, tokenizer):
     """Format the prompt for the model."""
-    user_prompt = example["input_text"]
 
     messages = [
         {
@@ -44,7 +56,7 @@ def format_prompt(example, system_prompt, tokenizer):
         },
         {
             "role": "user",
-            "content": user_prompt
+            "content": input_text
         }
     ]
     text = tokenizer.apply_chat_template(
@@ -78,13 +90,15 @@ def main():
     # Configure tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+    tokenizer.padding_side = "left"
 
     # Initialize model
     model: LlamaPromptTuningLM = LlamaPromptTuningLM.from_pretrained(
         model_args.model_name,
         device_map="auto"
     )
+    
+    
     
     # Load soft prompt if using prompt tuning
     if model_args.use_prompt_tuning:
@@ -93,6 +107,9 @@ def main():
     # model.init_soft_prompt_with_prompt_embedding(
     #     token_ids=tokenizer(system_prompt, add_special_tokens=False, return_tensors="pt").input_ids[0].to(model.device)
     # )
+    
+    print(f"Soft prompt length: {model.get_soft_prompt_len()}")
+    print(model.soft_prompt.shape)
     
     model.eval()
 
@@ -109,50 +126,67 @@ def main():
     soft_prompt_len = model.get_soft_prompt_len()
 
     # Evaluate
-    for i in tqdm(range(0, len(test_dataset))):
-        example = test_dataset[i]
-        
-        if soft_prompt_len > 0:
-            # Pad the soft prompt with padding tokens
-            text = format_prompt(example, "<|end_of_text|>"*soft_prompt_len, tokenizer)
-        else:
-            text = format_prompt(example, system_prompt, tokenizer)
+    batch_size = eval_args.batch_size
+    generation_config.max_new_tokens = generation_lengths[dataset_name]
+    for i in tqdm(range(0, len(test_dataset), batch_size)):
+        examples = test_dataset[i:i+batch_size]
+        texts = []
+        for input_text in examples["input_text"]:
+            if soft_prompt_len > 0:
+                # Pad the soft prompt with padding tokens
+                text = format_prompt(input_text, "<|end_of_text|>"*soft_prompt_len, tokenizer)
+            else:
+                text = format_prompt(input_text, system_prompt, tokenizer)
+            texts.append(text)
         
         # Format input using chat template
-        model_input = tokenizer(text, return_tensors="pt", add_special_tokens=False).to(model.device)
+        model_input = tokenizer(
+            texts, 
+            return_tensors="pt", 
+            add_special_tokens=False,
+            max_length=eval_args.max_seq_length,
+            truncation=True,
+            padding="longest"
+        ).to(model.device)
+        
+        # Get the left padding offset using attention mask
+        padding_offsets = (model_input.attention_mask == 0).sum(dim=1).cpu().tolist()
+        
 
         # Generate
         with torch.no_grad():
             outputs = model.generate(
                 **model_input,
-                max_new_tokens=generation_lengths[dataset_name],
-                do_sample=False,
-                temperature=0.0,
-                num_return_sequences=1,
+                generation_config=generation_config,
                 pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id
+                eos_token_id=tokenizer.eos_token_id,
+                # Use the padding offsets to generate the output
+                padding_offsets=padding_offsets,
             )
 
         # Decode output
-        generated_text = tokenizer.decode(
-            outputs[0][len(model_input[0]):],
+        generated_texts = tokenizer.batch_decode(
+            outputs[:, len(model_input[0]):],
             skip_special_tokens=True
-        ).strip()
+        )
+        
+        generated_texts = [text.strip() for text in generated_texts]
 
-        # Store results
-        result = {
-            "dataset": dataset_name,
-            "input_text": example["input_text"],
-            "model_output": generated_text,
-            "reference_answer": example["answer"]
-        }
-        # If dataset is MBPP, remove the python code block
-        if dataset_name == DatasetEnum.MBPP.value:
-            result["model_output"] = result["model_output"].replace("```python\n", "").replace("```", "")
-            # Also add all other columns to the result
-        for key in example.keys():
-            result[key] = example[key]
-        results.append(result)
+        for batch_idx in range(len(generated_texts)):
+            # Store results
+            result = {
+                "dataset": dataset_name,
+                "input_text": examples["input_text"][batch_idx],
+                "model_output": generated_texts[batch_idx],
+                "reference_answer": examples["answer"][batch_idx]
+            }
+            # If dataset is MBPP, remove the python code block
+            if dataset_name == DatasetEnum.MBPP.value:
+                result["model_output"] = result["model_output"].replace("```python\n", "").replace("```", "")
+                # Also add all other columns to the result
+            for key in examples.keys():
+                result[key] = examples[key][batch_idx]
+            results.append(result)
 
     # Save results
     # Create directory if it doesn't exist
